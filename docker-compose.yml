@@ -1,42 +1,129 @@
+volumes:
+  n8n_storage:
+  postgres_storage:
+  ollama_storage:
+  qdrant_storage:
+  open-webui:
+  grapdhdb:
+
+networks:
+  demo:
+
+x-n8n: &service-n8n
+  image: n8nio/n8n:latest
+  networks: ['demo']
+  environment:
+    - PUID=1001
+    - PGID=1001
+    - DB_TYPE=postgresdb
+    - DB_POSTGRESDB_HOST=postgres
+    - DB_POSTGRESDB_USER=${POSTGRES_USER}
+    - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+    - N8N_DIAGNOSTICS_ENABLED=false
+    - N8N_PERSONALIZATION_ENABLED=false
+    - N8N_ENCRYPTION_KEY
+    - N8N_USER_MANAGEMENT_JWT_SECRET
+  links:
+    - postgres
+
+x-ollama: &service-ollama
+  image: ollama/ollama:latest
+  container_name: ollama
+  networks: ['demo']
+  restart: unless-stopped
+  ports:
+    - 11434:11434
+  volumes:
+    - ollama_storage:/root/.ollama
+
+x-init-ollama: &init-ollama
+  image: ollama/ollama:latest
+  networks: ['demo']
+  container_name: ollama-pull-llama
+  volumes:
+    - ollama_storage:/root/.ollama
+  entrypoint: /bin/sh
+  command:
+    - "-c"
+    - "sleep 3; OLLAMA_HOST=ollama:11434 ollama pull llama3.1; OLLAMA_HOST=ollama:11434 ollama pull nomic-embed-text"
+
 services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    networks: ['demo']
+    restart: unless-stopped
+    container_name: open-webui
+    ports:
+      - "3000:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - open-webui:/app/backend/data
 
-  llm: &llm
-    image: ollama/ollama:latest
-    profiles: ["linux"]
-    networks:
-      - net
-
-  llm-gpu:
-    <<: *llm
-    profiles: ["linux-gpu"]
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
-  pull-model:
-    image: genai-stack/pull-model:latest
-    build:
-      context: .
-      dockerfile: pull_model.Dockerfile
+  postgres:
+    image: postgres:16-alpine
+    networks: ['demo']
+    restart: unless-stopped
+    
     environment:
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL-http://host.docker.internal:11434}
-      - LLM=${LLM-llama2}
-    networks:
-      - net
-    tty: true
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_DB
+    volumes:
+      - postgres_storage:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
-  database:
+  n8n-import:
+    <<: *service-n8n
+    container_name: n8n-import
+    entrypoint: /bin/sh
+    command:
+      - "-c"
+      - "n8n import:credentials --separate --input=/backup/credentials && n8n import:workflow --separate --input=/backup/workflows"
+    volumes:
+      - ./n8n/backup:/backup
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  n8n:
+    <<: *service-n8n
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - 5678:5678
+    volumes:
+      - n8n_storage:/home/node/.n8n
+      - ./n8n/backup:/backup
+      - ./shared:/data/shared
+    depends_on:
+      postgres:
+        condition: service_healthy
+      n8n-import:
+        condition: service_completed_successfully
+
+  qdrant:
+    image: qdrant/qdrant
+    container_name: qdrant
+    networks: ['demo']
+    restart: unless-stopped
+    ports:
+      - 6333:6333
+    volumes:
+      - qdrant_storage:/qdrant/storage
+
+  graphdb:
     user: neo4j:neo4j
     image: neo4j:5.11
     ports:
       - 7687:7687
       - 7474:7474
     volumes:
-      - $PWD/data:/data
+      - grapdhdb:/data
     environment:
       - NEO4J_AUTH=${NEO4J_USERNAME-neo4j}/${NEO4J_PASSWORD-password}
       - NEO4J_PLUGINS=["apoc"]
@@ -48,49 +135,34 @@ services:
         timeout: 30s
         retries: 10
     networks:
-      - net
+      - demo
 
-  loader:
-    build:
-      context: .
-      dockerfile: loader.Dockerfile
-    volumes:
-      - $PWD/embedding_model:/embedding_model
-    environment:
-      - NEO4J_URI=${NEO4J_URI-neo4j://database:7687}
-      - NEO4J_PASSWORD=${NEO4J_PASSWORD-password}
-      - NEO4J_USERNAME=${NEO4J_USERNAME-neo4j}
-      - OPENAI_API_KEY=${OPENAI_API_KEY-}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY-}      
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL-http://host.docker.internal:11434}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL-sentence_transformer}
-      - LANGCHAIN_ENDPOINT=${LANGCHAIN_ENDPOINT-"https://api.smith.langchain.com"}
-      - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2-false}
-      - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT}
-      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
-    networks:
-      - net
+  ollama-cpu:
+    profiles: ["cpu"]
+    <<: *service-ollama
+
+  ollama-gpu:
+    profiles: ["gpu-nvidia"]
+    <<: *service-ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  ollama-pull-llama-cpu:
+    profiles: ["cpu"]
+    <<: *init-ollama
     depends_on:
-      database:
-        condition: service_healthy
-      pull-model:
-        condition: service_completed_successfully
-    x-develop:
-      watch:
-        - action: rebuild
-          path: .
-          ignore:
-            - bot.py
-            - pdf_bot.py
-            - api.py
-            - front-end/
-    ports:
-      - 8081:8080
-      - 8502:8502
+      - ollama-cpu
 
+  ollama-pull-llama-gpu:
+    profiles: ["gpu-nvidia"]
+    <<: *init-ollama
+    depends_on:
+      - ollama-gpu
 
   bot:
     build:
@@ -115,12 +187,12 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
     networks:
-      - net
+      - demo
     depends_on:
-      database:
+      graphdb:
         condition: service_healthy
-      pull-model:
-        condition: service_completed_successfully
+      # pull-model:
+      #   condition: service_completed_successfully
     x-develop:
       watch:
         - action: rebuild
@@ -133,18 +205,19 @@ services:
     ports:
       - 8501:8501
 
-  pdf_bot:
+  loader:
     build:
       context: .
-      dockerfile: pdf_bot.Dockerfile
+      dockerfile: loader.Dockerfile
+    volumes:
+      - $PWD/embedding_model:/embedding_model
     environment:
       - NEO4J_URI=${NEO4J_URI-neo4j://database:7687}
       - NEO4J_PASSWORD=${NEO4J_PASSWORD-password}
       - NEO4J_USERNAME=${NEO4J_USERNAME-neo4j}
       - OPENAI_API_KEY=${OPENAI_API_KEY-}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY-}      
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL-http://host.docker.internal:11434}
-      - LLM=${LLM-llama2}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL-sentence_transformer}
       - LANGCHAIN_ENDPOINT=${LANGCHAIN_ENDPOINT-"https://api.smith.langchain.com"}
       - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2-false}
@@ -154,23 +227,63 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
     networks:
-      - net
+      - demo
     depends_on:
-      database:
+      graphdb:
         condition: service_healthy
-      pull-model:
-        condition: service_completed_successfully
+      # pull-model:
+      #   condition: service_completed_successfully
     x-develop:
       watch:
         - action: rebuild
           path: .
           ignore:
-            - loader.py
             - bot.py
+            - pdf_bot.py
             - api.py
             - front-end/
     ports:
-      - 8503:8503
+      - 8081:8080
+      - 8502:8502
+
+  # pdf_bot:
+  #   build:
+  #     context: .
+  #     dockerfile: pdf_bot.Dockerfile
+  #   environment:
+  #     - NEO4J_URI=${NEO4J_URI-neo4j://database:7687}
+  #     - NEO4J_PASSWORD=${NEO4J_PASSWORD-password}
+  #     - NEO4J_USERNAME=${NEO4J_USERNAME-neo4j}
+  #     - OPENAI_API_KEY=${OPENAI_API_KEY-}
+  #     - GOOGLE_API_KEY=${GOOGLE_API_KEY-}
+  #     - OLLAMA_BASE_URL=${OLLAMA_BASE_URL-http://host.docker.internal:11434}
+  #     - LLM=${LLM-llama2}
+  #     - EMBEDDING_MODEL=${EMBEDDING_MODEL-sentence_transformer}
+  #     - LANGCHAIN_ENDPOINT=${LANGCHAIN_ENDPOINT-"https://api.smith.langchain.com"}
+  #     - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2-false}
+  #     - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT}
+  #     - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
+  #     - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+  #     - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+  #     - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+  #   networks:
+  #     - demo
+  #   depends_on:
+  #     graphdb:
+  #       condition: service_healthy
+  #     # pull-model:
+  #     #   condition: service_completed_successfully
+  #   x-develop:
+  #     watch:
+  #       - action: rebuild
+  #         path: .
+  #         ignore:
+  #           - loader.py
+  #           - bot.py
+  #           - api.py
+  #           - front-end/
+  #   ports:
+  #     - 8503:8503
 
   api:
     build:
@@ -195,12 +308,12 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
     networks:
-      - net
+      - demo
     depends_on:
-      database:
+      graphdb:
         condition: service_healthy
-      pull-model:
-        condition: service_completed_successfully
+      # pull-model:
+      #   condition: service_completed_successfully
     x-develop:
       watch:
         - action: rebuild
@@ -235,9 +348,6 @@ services:
       api:
         condition: service_healthy
     networks:
-      - net
+      - demo
     ports:
       - 8505:8505
-
-networks:
-  net:

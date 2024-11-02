@@ -1,6 +1,9 @@
 
 from langchain_openai import OpenAIEmbeddings
-from langchain_community.embeddings import OllamaEmbeddings
+
+# from langchain_community.embeddings import OllamaEmbeddings
+
+from langchain_ollama.embeddings import OllamaEmbeddings
 from langchain_community.embeddings import BedrockEmbeddings
 from langchain_community.embeddings.sentence_transformer import SentenceTransformerEmbeddings
 
@@ -29,7 +32,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 def load_embedding_model(embedding_model_name: str, logger=BaseLogger(), config={}):
     if embedding_model_name == "ollama":
         embeddings = OllamaEmbeddings(
-            base_url=config["ollama_base_url"], model="llama2"
+            base_url=config["ollama_base_url"], model="nomic-embed-text"
         )
         dimension = 4096
         logger.info("Embedding: Using Ollama")

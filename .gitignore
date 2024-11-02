@@ -1,5 +1,8 @@
 .env
+venv/
+.venv/
 data/
 embedding_model/*
 !embedding_model/.ignore
 .DS_Store
+n8n/backup/credentials/
