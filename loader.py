@@ -92,7 +92,7 @@ def insert_so_data(data: dict) -> None:
                   owner.reputation = q.owner.reputation
     MERGE (owner)-[:ASKED]->(question)
     """
-    neo4j_graph.query(import_query, {"data": data["items"]})
+    neo4j_graph.query(import_query, {"data": data["items"]})    
 
 
 # Streamlit

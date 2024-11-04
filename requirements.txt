@@ -4,7 +4,7 @@ wikipedia
 tiktoken
 neo4j
 streamlit
-sentence_transformers==2.2.2
+scikit-learn
 Pillow
 fastapi
 PyPDF2
@@ -14,7 +14,11 @@ uvicorn
 sse-starlette
 boto3
 # missing from the langchain base image?
+langchain-huggingface
 langchain-openai
 langchain-community
 langchain-google-genai
 langchain-ollama
+langchain-nomic
+langgraph
+nomic[local]
