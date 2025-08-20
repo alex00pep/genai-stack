@@ -4,3 +4,7 @@
 !images/*
 !front-end/*
 front-end/node_modules/*
+!pyproject.toml
+!poetry.lock
+!poetry.toml
+!README.md

@@ -3,7 +3,7 @@ import os
 import streamlit as st
 from streamlit.logger import get_logger
 from langchain.callbacks.base import BaseCallbackHandler
-from langchain_community.graphs import Neo4jGraph
+from langchain_neo4j import Neo4jGraph
 from dotenv import load_dotenv
 from utils import (
     create_vector_index,
@@ -30,11 +30,13 @@ os.environ["NEO4J_URL"] = url
 logger = get_logger(__name__)
 
 # if Neo4j is local, you can go to http://localhost:7474/ to browse the database
-neo4j_graph = Neo4jGraph(url=url, username=username, password=password)
+neo4j_graph = Neo4jGraph(
+    url=url, username=username, password=password, refresh_schema=False
+)
 embeddings, dimension = load_embedding_model(
     embedding_model_name, config={"ollama_base_url": ollama_base_url}, logger=logger
 )
-create_vector_index(neo4j_graph, dimension)
+create_vector_index(neo4j_graph)
 
 
 class StreamHandler(BaseCallbackHandler):
@@ -90,10 +92,10 @@ def chat_input():
         with st.chat_message("assistant"):
             st.caption(f"RAG: {name}")
             stream_handler = StreamHandler(st.empty())
-            result = output_function(
-                {"question": user_input, "chat_history": []}, callbacks=[stream_handler]
-            )["answer"]
-            output = result
+            output = output_function.invoke(
+                user_input, config={"callbacks": [stream_handler]}
+            )
+
             st.session_state[f"user_input"].append(user_input)
             st.session_state[f"generated"].append(output)
             st.session_state[f"rag_mode"].append(name)

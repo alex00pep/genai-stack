@@ -1,0 +1,17 @@
+{
+    "dependencies": [
+        "./"
+    ],
+    "graphs": {
+        "supervisor": "./supervisor_agent.py:supervisor"
+    },
+    "env": ".env",
+    "python_version": "3.12",
+    "dockerfile_lines": [
+        "WORKDIR /app",
+        "COPY retrievers.py populate_stores.py tools.py utils.py chains.py agentic_rag.py supervisor_agent.py math_agent.py research_agent.py  /app/",
+        "EXPOSE 2024"
+    ],
+    "pip installer": "pip",
+    "image_distro": "wolfi"
+}

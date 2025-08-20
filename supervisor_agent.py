@@ -1,7 +1,5 @@
 from langgraph_supervisor import create_supervisor
-from langchain.chat_models import init_chat_model
 from langchain_ollama import ChatOllama
-from langgraph.prebuilt import create_react_agent
 
 
 from agentic_rag import graph as rag_agent
@@ -12,9 +10,8 @@ from langgraph.checkpoint.memory import MemorySaver
 
 memory = MemorySaver()
 
-# llm_model = "llama3.2:3b-instruct-fp16"
 
-# For thinking
+# For thinking and tool calling
 llm_model = "qwen2.5:14b"
 llm = ChatOllama(model=llm_model)
 supervisor = create_supervisor(
@@ -30,7 +27,7 @@ supervisor = create_supervisor(
     ),
     add_handoff_back_messages=True,
     output_mode="full_history",
-).compile()
+).compile(name="supervisor")
 
 
 if __name__ == "__main__":

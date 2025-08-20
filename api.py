@@ -1,6 +1,6 @@
 import os
 
-from langchain_community.graphs import Neo4jGraph
+from langchain_neo4j import Neo4jGraph
 from dotenv import load_dotenv
 from utils import (
     create_vector_index,
@@ -41,8 +41,10 @@ embeddings, dimension = load_embedding_model(
 )
 
 # if Neo4j is local, you can go to http://localhost:7474/ to browse the database
-neo4j_graph = Neo4jGraph(url=url, username=username, password=password)
-create_vector_index(neo4j_graph, dimension)
+neo4j_graph = Neo4jGraph(
+    url=url, username=username, password=password, refresh_schema=False
+)
+create_vector_index(neo4j_graph)
 
 llm = load_llm(
     llm_name, logger=BaseLogger(), config={"ollama_base_url": ollama_base_url}
@@ -126,10 +128,7 @@ def qstream(question: Question = Depends()):
     q = Queue()
 
     def cb():
-        output_function(
-            {"question": question.text, "chat_history": []},
-            callbacks=[QueueCallback(q)],
-        )
+        output_function.invoke(question.text, config={"callbacks": [QueueCallback(q)]})
 
     def generate():
         yield json.dumps({"init": True, "model": llm_name})
@@ -144,9 +143,7 @@ async def ask(question: Question = Depends()):
     output_function = llm_chain
     if question.rag:
         output_function = rag_chain
-    result = output_function(
-        {"question": question.text, "chat_history": []}, callbacks=[]
-    )
+    result = output_function.invoke(question.text)
 
     return {"result": result["answer"], "model": llm_name}
 

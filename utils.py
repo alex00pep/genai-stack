@@ -26,15 +26,17 @@ def extract_title_and_question(input_string):
     return title, question
 
 
-def create_vector_index(driver, dimension: int) -> None:
-    index_query = "CALL db.index.vector.createNodeIndex('stackoverflow', 'Question', 'embedding', $dimension, 'cosine')"
+def create_vector_index(driver) -> None:
+    index_query = "CREATE VECTOR INDEX stackoverflow IF NOT EXISTS FOR (m:Question) ON m.embedding"
     try:
-        driver.query(index_query, {"dimension": dimension})
+        driver.query(index_query)
     except:  # Already exists
         pass
-    index_query = "CALL db.index.vector.createNodeIndex('top_answers', 'Answer', 'embedding', $dimension, 'cosine')"
+    index_query = (
+        "CREATE VECTOR INDEX top_answers IF NOT EXISTS FOR (m:Answer) ON m.embedding"
+    )
     try:
-        driver.query(index_query, {"dimension": dimension})
+        driver.query(index_query)
     except:  # Already exists
         pass
 
@@ -52,3 +54,7 @@ def create_constraints(driver):
     driver.query(
         "CREATE CONSTRAINT tag_name IF NOT EXISTS FOR (t:Tag) REQUIRE (t.name) IS UNIQUE"
     )
+
+
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)

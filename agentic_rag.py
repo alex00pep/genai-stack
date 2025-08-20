@@ -7,11 +7,10 @@ from langgraph.graph.message import add_messages
 from typing import Sequence, TypedDict, List, Annotated
 from langchain_ollama import ChatOllama
 from langchain.schema import Document
-from langgraph.graph import END, START
+from langgraph.graph import END
 from langgraph.graph import StateGraph
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.types import Command
 from dotenv import load_dotenv
 
 load_dotenv(".env")
