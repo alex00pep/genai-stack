@@ -6,3 +6,7 @@ embedding_model/*
 !embedding_model/.ignore
 .DS_Store
 n8n/backup/credentials/
+
+**__pycache__/
+.ipynb_checkpoints
+http:

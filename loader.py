@@ -1,7 +1,9 @@
 import os
 import requests
+from streamlit.logger import get_logger
 from dotenv import load_dotenv
 from langchain_community.graphs import Neo4jGraph
+
 import streamlit as st
 from streamlit.logger import get_logger
 from chains import load_embedding_model
@@ -92,7 +94,7 @@ def insert_so_data(data: dict) -> None:
                   owner.reputation = q.owner.reputation
     MERGE (owner)-[:ASKED]->(question)
     """
-    neo4j_graph.query(import_query, {"data": data["items"]})    
+    neo4j_graph.query(import_query, {"data": data["items"]})
 
 
 # Streamlit
@@ -124,9 +126,10 @@ def render_page():
     user_input = get_tag()
     num_pages, start_page = get_pages()
 
-    if st.button("Import", type="primary"):
+    if st.button("Import StackOverflow data", type="primary"):
         with st.spinner("Loading... This might take a minute or two."):
             try:
+                st.caption("Importing StackOverflow questions/answers content")
                 for page in range(1, num_pages + 1):
                     load_so_data(user_input, start_page + (page - 1))
                 st.success("Import successful", icon="✅")
@@ -143,6 +146,24 @@ def render_page():
                     st.success("Import successful", icon="✅")
                 except Exception as e:
                     st.error(f"Error: {e}", icon="🚨")
+
+    st.header("Loader of AI documents online")
+    st.subheader("Later we will add boxes to add URLs to scrrape content")
+
+    if st.button("Import AI content", type="primary"):
+        with st.spinner("Loading... This might take a minute or two."):
+            try:
+                st.caption("Importing content")
+                import populate_stores
+
+                populate_stores.populate()
+
+                st.success("Import successful", icon="✅")
+                st.caption(
+                    "Go to http://localhost:6333/ to interact with vector database"
+                )
+            except Exception as e:
+                st.error(f"Error: {e}", icon="🚨")
 
 
 render_page()
